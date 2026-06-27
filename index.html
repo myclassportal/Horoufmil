@@ -33,6 +33,9 @@
     .hidden { display: none !important; }
     .screen {
       width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      padding-bottom: 250px;
       display: none !important;
       flex-direction: column;
       align-items: center;
@@ -301,7 +304,7 @@
     <div style="background: #ffe4e1; border: 2px dashed #ff69b4; border-radius: 15px; padding: 20px; margin-bottom: 25px; line-height: 1.8; text-align: justify; direction: rtl;">
         <span style="font-size: 14pt; font-weight: bold; color: #ff1493; display: block; margin-bottom: 10px;" id="ast-welcome">سلام قهرمان!</span>
         <p style="font-size: 11pt; color: #333; margin: 0;">
-            بازی قبلی‌ات با موفقیت تمام شده بود، اما به خاطر قطع شدن اینترنت، ستاره‌ی طلایی‌ات به دفتر کلاسی معلم نرسیده بود. 
+            بازی قبلی‌ات با موفقیت تمام شده بود، اما به خاطر قطع شدن اینترنت، ستاره‌ی طلایی‌ی تو به دفتر کلاسی معلم نرسیده بود. 
             اصلاً نگران نباش! نیازی به بازی دوباره نیست. دکمه زیر را بزن تا ستاره‌ات ثبت بشه و کارنامه‌ات رو ببینی. 😊
         </p>
     </div>
@@ -1079,6 +1082,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function authenticatePortalStudent() {
         await Portal.authenticate({
             onSuccess: (data) => {
+                document.getElementById('portal-welcome-section').style.display = '';
+                document.getElementById('register-btn').style.display = '';
+                document.getElementById('portal-error-section').style.display = 'none';
+
                 STORAGE = `studentProfile_AdadBeHoroofMillion_${Portal.studentId}_${Portal.homeworkId}`;
                 GAME_STATE_STORAGE = `gameState_AdadBeHoroofMillion_${Portal.studentId}_${Portal.homeworkId}`;
                 
