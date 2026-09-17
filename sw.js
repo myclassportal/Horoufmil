@@ -1,11 +1,23 @@
-const CACHE_NAME = 'number-to-words-million-v2';
+const CACHE_NAME = 'number-to-words-million-v3';
+
+const SOUND_ASSETS = [
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
+  '20', '30', '40', '50', '60', '70', '80', '90',
+  '100', '200', '300', '400', '500', '600', '700', '800', '900',
+  'va', 'hezar', 'milion',
+  'intro_drag', 'intro_type', 'joda_kon', 'tabaghe_milion', 'tabaghe_hezar', 'tabaghe_yeki', 'sefr_khande_namishe', 'afarin'
+].map(name => `./sounds/${name}.mp3`);
+
 const ASSETS = [
   './',
   './index.html',
   './game-db.js',
   './supabase.js',
+  './game-audio.js',
   './Vazirmatn-Regular.woff2',
-  './Vazirmatn-Bold.woff2'
+  './Vazirmatn-Bold.woff2',
+  ...SOUND_ASSETS
 ];
 
 self.addEventListener('install', (e) => {
