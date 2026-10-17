@@ -304,3 +304,25 @@ const GameAudio = {
         return this.isMuted;
     }
 };
+
+window.GameAudio = GameAudio;
+
+let hasUnlockedIOS = false;
+const handleIOSAudio = () => {
+    const ctx = GameAudio.getAudioContext();
+    if (!ctx) return;
+    if (!hasUnlockedIOS) {
+        const dummyBuffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = dummyBuffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        hasUnlockedIOS = true;
+    }
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
+};
+['touchstart', 'touchend', 'click'].forEach(e => {
+    document.addEventListener(e, handleIOSAudio, { passive: true });
+});

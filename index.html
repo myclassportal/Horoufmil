@@ -21,7 +21,8 @@
       font-style: normal;
     }
 
-    * { box-sizing: border-box; touch-action: manipulation; user-select: none; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+    * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+    
     body {
       font-family: 'Vazirmatn', sans-serif;
       background: #d4f1f4;
@@ -30,16 +31,19 @@
       -webkit-overflow-scrolling: touch;
       touch-action: pan-y;
       text-align: center;
+      overscroll-behavior-y: contain;
     }
+
     .hidden { display: none !important; }
     .screen {
       width: 100%;
-      height: 100%;
-      overflow-y: auto;
+      height: auto;
+      min-height: 100%;
       padding-bottom: 250px;
       display: none !important;
       flex-direction: column;
       align-items: center;
+      touch-action: pan-y;
     }
     .screen.active {
       display: flex !important;
@@ -273,14 +277,55 @@
     #pieces { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 4px; min-height: 64px; padding: 6px; }
     .piece {
       padding: 8px 12px; background: #ffd700; border: 2px solid #ffa500; border-radius: 10px; font-weight: 700; cursor: grab; user-select: none; box-shadow: 0 6px 12px rgba(0,0,0,0.12); touch-action: none; position: relative; z-index: 30; font-size: 14pt;
-      transition: transform 0.2s, background-color 0.2s;
+      transition: transform 0.2s, background-color 0.2s, border-color 0.2s, color 0.2s;
     }
     .piece.and { background: #90ee90; border-color: #32cd32; }
     .piece.group { background: #ff69b4; color: #fff; }
     .piece:active { transform: scale(1.03); }
+
+    .piece.piece-correct {
+      background: #d4edda !important;
+      border-color: #28a745 !important;
+      color: #155724 !important;
+    }
+    .piece.piece-wrong {
+      background: #f8d7da !important;
+      border-color: #dc3545 !important;
+      color: #721c24 !important;
+      animation: shake 0.35s;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+
+    .slot-placeholder {
+      min-width: 50px;
+      height: 46px;
+      padding: 4px 10px;
+      border: 2px dashed #ff9800;
+      border-radius: 10px;
+      background: rgba(255, 243, 224, 0.85);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #e65100;
+      font-size: 14pt;
+      font-weight: bold;
+      transition: all 0.2s ease;
+      animation: pulse-slot 1.2s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulse-slot {
+      0% { border-color: #ff9800; background: rgba(255, 243, 224, 0.7); }
+      100% { border-color: #f57c00; background: rgba(255, 224, 178, 0.95); }
+    }
+
     #answer { min-height: 64px; background: #e6f7ff; border: 3px dashed #87ceeb; border-radius: 10px; padding: 12px; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; overflow: visible; }
     #submit { display: none; margin: 8px auto; padding: 10px 18px; border-radius: 10px; background: #32cd32; color: #fff; border: none; font-size: 16pt; cursor: pointer; font-family: inherit; font-weight: bold; }
-    #feedback { min-height: 28px; margin: 8px 0; font-size: 15pt; font-weight: 700; color: #d32f2f; }
+    #feedback { min-height: 28px; margin: 8px 0; font-size: 14pt; font-weight: 700; color: #d32f2f; line-height: 1.6; }
     
     .report-details {
       text-align: right;
@@ -305,6 +350,7 @@
       #number-container { font-size: 20pt; min-width: 200px; padding: 10px 16px; }
       .num-digit { padding: 0 3px; }
       .piece { font-size: 13pt; padding: 8px 10px; }
+      .slot-placeholder { min-width: 44px; height: 42px; font-size: 12pt; }
       #submit { font-size: 15pt; padding: 10px 14px; }
     }
   </style>
@@ -459,10 +505,15 @@ document.addEventListener('DOMContentLoaded', () => {
         stages: [], 
         stage: 0, 
         score: 0,
-        lastGameScore: 0
+        lastGameScore: 0,
+        savedPlacedItems: null,
+        savedRemainingPieces: null,
+        savedTypedVal: null
     };
 
     let selected = null, offsetX = 0, offsetY = 0, totalPieces = 0, isGameFinished = false;
+    let originParentId = null, originNextSibling = null;
+    let dragStartX = 0, dragStartY = 0, isDragging = false;
     let isTutorialRunning = false;
     let introPlayedStages = {};
 
@@ -485,14 +536,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizePersianText(text) {
       if (!text) return "";
-      return text
-        .trim()
-        .replace(/\s+/g, ' ')
-        .replace(/ی/g, 'ی')
-        .replace(/ي/g, 'y')
-        .replace(/y/g, 'ی')
-        .replace(/ک/g, 'ک')
-        .replace(/ك/g, 'ک');
+      let s = text.trim();
+      s = s.replace(/[\u200C\u200E\u200F\u00A0]/g, ' ');
+      s = s.replace(/\s+/g, ' ');
+      s = s.replace(/ی/g, 'ی').replace(/ي/g, 'ی');
+      s = s.replace(/ک/g, 'ک').replace(/ك/g, 'ک');
+      s = s.replace(/\bیک\s*صد\b/g, 'صد');
+      s = s.replace(/\bیکصد\b/g, 'صد');
+      const hundreds = ['سی', 'چهار', 'پان', 'شش', 'هفت', 'هشت', 'نه'];
+      hundreds.forEach(h => {
+        const re = new RegExp(h + '\\s+صد', 'g');
+        s = s.replace(re, h + 'صد');
+      });
+      return s.trim();
+    }
+
+    function normalizeForRealtime(text) {
+      if (!text) return "";
+      let s = text.trimStart();
+      s = s.replace(/[\u200C\u200E\u200F\u00A0]/g, ' ');
+      s = s.replace(/\s+/g, ' ');
+      s = s.replace(/ی/g, 'ی').replace(/ي/g, 'ی');
+      s = s.replace(/ک/g, 'ک').replace(/ك/g, 'ک');
+      s = s.replace(/\bیک\s*(ص|صد)?/g, 'صد');
+      const hundreds = ['سی', 'چهار', 'پان', 'شش', 'هفت', 'هشت', 'نه'];
+      hundreds.forEach(h => {
+        const re = new RegExp('(' + h + ')\\s+(ص|صد)', 'g');
+        s = s.replace(re, '$1$2');
+      });
+      return s.trimStart();
     }
 
     function showScreen(id) {
@@ -520,10 +592,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveGameState() {
+        const answerBox = document.getElementById('answer');
+        const piecesBox = document.getElementById('pieces');
+        
+        let placedItems = [];
+        if (answerBox && gameState.stage < 6) {
+          placedItems = Array.from(answerBox.children).map(child => {
+            if (child.classList.contains('slot-placeholder')) {
+              return { type: 'slot' };
+            } else if (child.classList.contains('piece')) {
+              return {
+                type: 'piece',
+                word: child.getAttribute('data-word'),
+                isWrong: child.classList.contains('piece-wrong'),
+                isCorrect: child.classList.contains('piece-correct')
+              };
+            }
+            return null;
+          }).filter(Boolean);
+        }
+
+        let remainingPieces = [];
+        if (piecesBox && gameState.stage < 6) {
+          remainingPieces = Array.from(piecesBox.children).map(child => child.getAttribute('data-word')).filter(Boolean);
+        }
+
+        const typedVal = document.getElementById('wordInput') ? document.getElementById('wordInput').value : '';
+
         localStorage.setItem(GAME_STATE_STORAGE, JSON.stringify({
             stages: gameState.stages,
             stage: gameState.stage,
-            score: gameState.score
+            score: gameState.score,
+            placedItems,
+            remainingPieces,
+            typedVal
         }));
     }
 
@@ -535,12 +637,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 gameState.stages = d.stages;
                 gameState.stage = d.stage;
                 gameState.score = d.score;
+                gameState.savedPlacedItems = d.placedItems;
+                gameState.savedRemainingPieces = d.remainingPieces;
+                gameState.savedTypedVal = d.typedVal;
             } catch (e) {}
         }
     }
 
     function clearGameState() {
         localStorage.removeItem(GAME_STATE_STORAGE);
+        gameState.savedPlacedItems = null;
+        gameState.savedRemainingPieces = null;
+        gameState.savedTypedVal = null;
     }
 
     function checkSavedUnfinishedState() {
@@ -647,6 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 document.getElementById('wordInput').value += ' ';
                 validateInputRealTime();
+                saveGameState();
               }
             });
           } else if (char === 'پاک کردن') {
@@ -656,6 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
               GameAudio.playSFX('click');
               document.getElementById('wordInput').value = document.getElementById('wordInput').value.slice(0, -1);
               validateInputRealTime();
+              saveGameState();
             });
           } else {
             btn.addEventListener('click', () => {
@@ -663,6 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
               GameAudio.playSFX('click');
               document.getElementById('wordInput').value += char;
               validateInputRealTime();
+              saveGameState();
             });
           }
           rowDiv.appendChild(btn);
@@ -677,11 +788,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('submit').style.display = "none";
         return;
       }
-      const typed = normalizePersianText(document.getElementById('wordInput').value);
+      const rawTyped = document.getElementById('wordInput').value;
+      const typed = normalizePersianText(rawTyped);
+      const typedRt = normalizeForRealtime(rawTyped);
       const target = normalizePersianText(gameState.stages[gameState.stage].w);
       const spaceBtn = document.getElementById('spaceKey');
       
-      if (typed === "") {
+      if (rawTyped.trim() === "") {
         document.getElementById('wordInput').style.color = "#222";
         document.getElementById('wordInput').style.borderColor = "#87ceeb";
         document.getElementById('wordInput').style.backgroundColor = "#f0f8ff";
@@ -693,7 +806,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      if (target.startsWith(typed)) {
+      const isPrefix = target.startsWith(typed) || target.startsWith(typedRt) || target.startsWith(typed.trimEnd());
+      
+      if (isPrefix) {
         document.getElementById('wordInput').style.color = "green";
         document.getElementById('wordInput').style.borderColor = "green";
         document.getElementById('wordInput').style.backgroundColor = "#e8f5e9";
@@ -741,6 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
       isGameFinished = false;
       document.getElementById('submit').style.display = 'none';
       document.getElementById('feedback').textContent = '';
+      clearGameState();
       saveGameState();
     }
 
@@ -776,6 +892,21 @@ document.addEventListener('DOMContentLoaded', () => {
         dSpan.textContent = toPersianDigits(s[i]);
         numContainer.appendChild(dSpan);
       }
+    }
+
+    function createPieceElement(token, idx) {
+      const div = document.createElement('div');
+      div.className = 'piece';
+      div.id = `piece-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+      div.setAttribute('data-word', token);
+      if(token === 'و') div.classList.add('and');
+      if(['هزار','میلیون','میلیارد'].includes(token)) div.classList.add('group');
+      div.textContent = token;
+      
+      div.addEventListener('mousedown', startDrag);
+      div.addEventListener('touchstart', startDrag, {passive:false});
+
+      return div;
     }
 
     function loadStage(){
@@ -818,8 +949,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('keyboardInputContainer').style.display = 'block';
         document.getElementById('pieces').style.display = 'none';
         document.getElementById('answer').style.display = 'none';
-        document.getElementById('wordInput').value = '';
         
+        document.getElementById('wordInput').value = gameState.savedTypedVal !== null ? gameState.savedTypedVal : '';
         document.getElementById('wordInput').style.color = "#222";
         document.getElementById('wordInput').style.borderColor = "#87ceeb";
         document.getElementById('wordInput').style.backgroundColor = "#f0f8ff";
@@ -838,24 +969,40 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const pcs = getStageTokens(s);
         totalPieces = pcs.length;
-        pcs.sort(()=>Math.random()-0.5).forEach((token, idx)=>{
-          const div = document.createElement('div');
-          div.className = 'piece';
-          div.id = `piece-${idx}`;
-          div.setAttribute('data-word', token);
-          if(token === 'و') div.classList.add('and');
-          if(['هزار','میلیون','میلیارد'].includes(token)) div.classList.add('group');
-          div.textContent = token;
-          
-          div.addEventListener('mousedown', startDrag);
-          div.addEventListener('touchstart', startDrag, {passive:false});
-          
-          document.getElementById('pieces').appendChild(div);
-        });
 
-        if (!introPlayedStages[0] && gameState.stage === 0) {
-          introPlayedStages[0] = true;
-          GameAudio.speakIntroDrag();
+        if (Array.isArray(gameState.savedPlacedItems) && gameState.savedPlacedItems.length > 0) {
+          gameState.savedPlacedItems.forEach((item, idx) => {
+            if (item.type === 'slot') {
+              const slot = document.createElement('div');
+              slot.className = 'slot-placeholder';
+              slot.textContent = '...';
+              document.getElementById('answer').appendChild(slot);
+            } else if (item.type === 'piece') {
+              const div = createPieceElement(item.word, idx);
+              if (item.isCorrect) div.classList.add('piece-correct');
+              if (item.isWrong) div.classList.add('piece-wrong');
+              document.getElementById('answer').appendChild(div);
+            }
+          });
+
+          if (Array.isArray(gameState.savedRemainingPieces)) {
+            gameState.savedRemainingPieces.forEach((token, idx) => {
+              const div = createPieceElement(token, idx + 100);
+              document.getElementById('pieces').appendChild(div);
+            });
+          }
+
+          checkSubmit();
+        } else {
+          pcs.sort(()=>Math.random()-0.5).forEach((token, idx)=>{
+            const div = createPieceElement(token, idx);
+            document.getElementById('pieces').appendChild(div);
+          });
+
+          if (!introPlayedStages[0] && gameState.stage === 0) {
+            introPlayedStages[0] = true;
+            GameAudio.speakIntroDrag();
+          }
         }
       }
       
@@ -876,8 +1023,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const answerBox = document.getElementById('answer');
       const piecesBox = document.getElementById('pieces');
       if (answerBox && piecesBox) {
+        answerBox.querySelectorAll('.slot-placeholder').forEach(s => s.remove());
         Array.from(answerBox.children).forEach(p => {
           if (p.classList.contains('piece')) {
+            p.classList.remove('piece-correct', 'piece-wrong');
             p.style.position = 'static';
             p.style.zIndex = '';
             piecesBox.appendChild(p);
@@ -1134,6 +1283,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const mustHaveFourZeros = (index % 2 === 1);
       
       gameState.stages[index] = generateStageForDigits(numDigits, mustHaveFourZeros);
+      gameState.savedPlacedItems = null;
+      gameState.savedRemainingPieces = null;
+      gameState.savedTypedVal = null;
       saveGameState();
       loadStage();
     }
@@ -1174,19 +1326,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startDrag(e){
       if (isTutorialRunning) return;
+      const target = e.target.closest('.piece');
+      if (!target) return;
+
       e.preventDefault();
       GameAudio.playSFX('click');
-      selected = e.target;
-      const rect = selected.getBoundingClientRect();
+      selected = target;
+      originParentId = selected.parentElement ? selected.parentElement.id : null;
+      originNextSibling = selected.nextSibling;
+
       const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
       const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+
+      dragStartX = clientX;
+      dragStartY = clientY;
+      isDragging = false;
+
+      const rect = selected.getBoundingClientRect();
       offsetX = clientX - rect.left;
       offsetY = clientY - rect.top;
-      selected.style.position = 'absolute';
-      selected.style.left = (clientX - offsetX + window.scrollX) + 'px';
-      selected.style.top = (clientY - offsetY + window.scrollY) + 'px';
-      selected.style.zIndex = 3000;
-      document.body.appendChild(selected);
+
       document.addEventListener('mousemove', drag);
       document.addEventListener('touchmove', drag, {passive:false});
       document.addEventListener('mouseup', stopDrag);
@@ -1195,34 +1354,118 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function drag(e){
       if(!selected) return;
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
       const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
       const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+
+      if (!isDragging) {
+        if (Math.hypot(clientX - dragStartX, clientY - dragStartY) < 4) {
+          return;
+        }
+        isDragging = true;
+        selected.style.position = 'absolute';
+        selected.style.zIndex = '3000';
+        document.body.appendChild(selected);
+      }
+
       selected.style.left = (clientX - offsetX + window.scrollX) + 'px';
       selected.style.top = (clientY - offsetY + window.scrollY) + 'px';
     }
 
     function stopDrag(){
       if(!selected) return;
-      const answerRect = document.getElementById('answer').getBoundingClientRect();
-      const pieceRect = selected.getBoundingClientRect();
-      const centerX = pieceRect.left + pieceRect.width/2;
-      const centerY = pieceRect.top + pieceRect.height/2;
-      if(centerX > answerRect.left && centerX < answerRect.right && centerY > answerRect.top && centerY < answerRect.bottom){
-        selected.style.position = 'static';
-        selected.style.zIndex = '';
-        document.getElementById('answer').appendChild(selected);
-      } else {
-        selected.style.position = 'static';
-        selected.style.zIndex = '';
-        document.getElementById('pieces').appendChild(selected);
-      }
-      checkSubmit();
-      selected = null;
+
       document.removeEventListener('mousemove', drag);
       document.removeEventListener('touchmove', drag);
       document.removeEventListener('mouseup', stopDrag);
       document.removeEventListener('touchend', stopDrag);
+
+      const piece = selected;
+      const fromParentId = originParentId;
+      const prevNextSibling = originNextSibling;
+      const wasDragged = isDragging;
+
+      selected = null;
+      originParentId = null;
+      originNextSibling = null;
+      isDragging = false;
+
+      if (!wasDragged) {
+        return;
+      }
+
+      const answerBox = document.getElementById('answer');
+      const piecesBox = document.getElementById('pieces');
+      const answerRect = answerBox.getBoundingClientRect();
+      const pieceRect = piece.getBoundingClientRect();
+      const centerX = pieceRect.left + pieceRect.width / 2;
+      const centerY = pieceRect.top + pieceRect.height / 2;
+
+      piece.style.position = 'static';
+      piece.style.zIndex = '';
+      piece.style.left = '';
+      piece.style.top = '';
+
+      const droppedInAnswer = (centerX > answerRect.left && centerX < answerRect.right && centerY > answerRect.top && centerY < answerRect.bottom);
+
+      if (droppedInAnswer) {
+        const slots = Array.from(answerBox.querySelectorAll('.slot-placeholder'));
+        let targetSlot = null;
+        for (const slot of slots) {
+          const sRect = slot.getBoundingClientRect();
+          if (centerX >= sRect.left && centerX <= sRect.right && centerY >= sRect.top && centerY <= sRect.bottom) {
+            targetSlot = slot;
+            break;
+          }
+        }
+
+        if (fromParentId === 'answer') {
+          if (targetSlot) {
+            const slot = document.createElement('div');
+            slot.className = 'slot-placeholder';
+            slot.textContent = '...';
+            if (prevNextSibling && prevNextSibling.parentNode === answerBox) {
+              answerBox.insertBefore(slot, prevNextSibling);
+            } else {
+              answerBox.appendChild(slot);
+            }
+            answerBox.insertBefore(piece, targetSlot);
+            targetSlot.remove();
+          } else {
+            if (prevNextSibling && prevNextSibling.parentNode === answerBox) {
+              answerBox.insertBefore(piece, prevNextSibling);
+            } else {
+              answerBox.appendChild(piece);
+            }
+          }
+        } else {
+          if (targetSlot) {
+            answerBox.insertBefore(piece, targetSlot);
+            targetSlot.remove();
+          } else if (slots.length > 0) {
+            answerBox.insertBefore(piece, slots[0]);
+            slots[0].remove();
+          } else {
+            answerBox.appendChild(piece);
+          }
+        }
+      } else {
+        if (fromParentId === 'answer') {
+          const slot = document.createElement('div');
+          slot.className = 'slot-placeholder';
+          slot.textContent = '...';
+          if (prevNextSibling && prevNextSibling.parentNode === answerBox) {
+            answerBox.insertBefore(slot, prevNextSibling);
+          } else {
+            answerBox.appendChild(slot);
+          }
+        }
+        piece.classList.remove('piece-wrong', 'piece-correct');
+        piecesBox.appendChild(piece);
+      }
+      
+      checkSubmit();
+      saveGameState();
     }
 
     function checkSubmit(){
@@ -1231,8 +1474,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (gameState.stage < 6) {
-        const count = document.getElementById('answer').querySelectorAll('.piece').length;
-        if(count === totalPieces && totalPieces > 0){
+        const answerBox = document.getElementById('answer');
+        const count = answerBox.querySelectorAll('.piece').length;
+        const hasSlots = answerBox.querySelectorAll('.slot-placeholder').length > 0;
+        if(count === totalPieces && totalPieces > 0 && !hasSlots){
           document.getElementById('submit').style.display = 'block';
         } else {
           document.getElementById('submit').style.display = 'none';
@@ -1242,31 +1487,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('submit').addEventListener('click', ()=>{
       if (isTutorialRunning) return;
-      let ans = "";
+      
       if (gameState.stage >= 6) {
-        ans = normalizePersianText(document.getElementById('wordInput').value);
+        const rawAns = document.getElementById('wordInput').value;
+        const ans = normalizePersianText(rawAns);
+        const targetWord = normalizePersianText(gameState.stages[gameState.stage].w);
+        
+        if(ans === targetWord){
+          GameAudio.playSFX('correct');
+          document.getElementById('feedback').innerHTML = '<span style="color:green">✅ آفرین قهرمان! جوابت کاملاً درسته. 🌸</span>';
+          gameState.score++;
+          dropFlowers();
+          gameState.stage++;
+          gameState.savedPlacedItems = null;
+          gameState.savedRemainingPieces = null;
+          gameState.savedTypedVal = null;
+          saveGameState();
+          saveState();
+          setTimeout(()=>{ loadStage(); }, 1200);
+        } else {
+          GameAudio.playSFX('wrong');
+          document.getElementById('feedback').innerHTML = `<span style="color:red">❌ دقت کن قهرمان! جوابت درست نیست؛ دوباره تلاش کن!</span>`;
+        }
       } else {
-        ans = normalizePersianText(Array.from(document.getElementById('answer').children).filter(p=>p.classList.contains('piece')).map(p=>p.textContent).join(' '));
-      }
-      
-      const targetWord = normalizePersianText(gameState.stages[gameState.stage].w);
-      
-      if(ans === targetWord){
-        GameAudio.playSFX('correct');
-        document.getElementById('feedback').innerHTML = '<span style="color:green">✅ آفرین قهرمان! جوابت کاملاً درسته. 🌸</span>';
-        gameState.score++;
-        dropFlowers();
-        gameState.stage++;
-        saveGameState();
-        saveState();
-        setTimeout(()=>{ loadStage(); }, 1200);
-      } else {
-        GameAudio.playSFX('wrong');
-        document.getElementById('feedback').innerHTML = `<span style="color:red">❌ دقت کن قهرمان! جوابت درست نیست؛ دوباره تلاش کن!</span>`;
+        const answerBox = document.getElementById('answer');
+        const placedPieces = Array.from(answerBox.children).filter(p => p.classList.contains('piece'));
+        const targetTokens = getStageTokens(gameState.stages[gameState.stage]);
+        
+        let allCorrect = true;
+        if (placedPieces.length !== targetTokens.length) {
+          allCorrect = false;
+        }
+
+        placedPieces.forEach((piece, idx) => {
+          const pieceWord = piece.getAttribute('data-word');
+          const targetWord = targetTokens[idx];
+          if (targetWord && pieceWord === targetWord) {
+            piece.classList.remove('piece-wrong');
+            piece.classList.add('piece-correct');
+          } else {
+            piece.classList.remove('piece-correct');
+            piece.classList.add('piece-wrong');
+            allCorrect = false;
+          }
+        });
+
+        if (allCorrect) {
+          GameAudio.playSFX('correct');
+          document.getElementById('feedback').innerHTML = '<span style="color:green">✅ آفرین قهرمان! همه‌ی کارت‌ها کاملاً درست چیده شدند. 🌸</span>';
+          gameState.score++;
+          dropFlowers();
+          gameState.stage++;
+          gameState.savedPlacedItems = null;
+          gameState.savedRemainingPieces = null;
+          gameState.savedTypedVal = null;
+          saveGameState();
+          saveState();
+          setTimeout(()=>{ loadStage(); }, 1200);
+        } else {
+          GameAudio.playSFX('wrong');
+          document.getElementById('feedback').innerHTML = '<span style="color:#c62828">❌ کارت‌های قرمز را با دست به بیرون بکش و کارت‌های درست را جایگزین کن!</span>';
+          saveGameState();
+        }
       }
     });
 
-    document.getElementById('wordInput').addEventListener('input', validateInputRealTime);
+    document.getElementById('wordInput').addEventListener('input', () => {
+      validateInputRealTime();
+      saveGameState();
+    });
 
     document.getElementById('wordInput').addEventListener('keydown', (e) => {
       if (isTutorialRunning) return;
@@ -1485,10 +1774,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (gameState.currentScreen === 'report') {
                     showScreen('screen-report');
                     renderReport(gameState.totalScore >= Portal.requiredStars, gameState.totalScore);
-                } else if (activeState) {
-                    showScreen('screen-game');
-                    loadState();
-                    loadStage();
                 } else {
                     showScreen('screen-register');
                 }
@@ -1537,9 +1822,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.addEventListener('touchmove', function(e){
-      if(selected) e.preventDefault();
-    }, {passive:false});
+    let touchStartY = 0;
+    document.addEventListener('touchstart', function(e) {
+      if (e.touches && e.touches.length === 1) {
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function(e) {
+      if (selected) {
+        e.preventDefault();
+        return;
+      }
+      if (e.touches && e.touches.length === 1) {
+        const touchY = e.touches[0].clientY;
+        const isPullingDown = touchY > touchStartY;
+        if (window.scrollY <= 0 && isPullingDown) {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
 
 });
 </script>
